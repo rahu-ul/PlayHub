@@ -126,9 +126,9 @@ This project was built as part of a **learning journey using structured tutorial
 ## 📫 Contact
 
 **Rahul Sharma**
-B.Tech (CSE – AI & DS)
-📧 Email: [your-email@example.com](mailto:your-email@example.com)
-🔗 LinkedIn: your-linkedin-url
-💻 GitHub: your-github-profile
+B.Tech (CSE – AI & DS)  
+📧 Email: [rahulsharmajan20@gmail.com](rahulsharmajan20@gmail.com)    
+🔗 LinkedIn: (https://www.linkedin.com/in/rahu-ul/)   
+💻 GitHub: (https://github.com/rahu-ul)
 
 

@@ -41,7 +41,7 @@ import ManagePlaylist from './pages/ManagePlaylist'
 import UseGetRecommendation from './customHooks/UseGetRecommendation'
 import RevenuePage from './component/RevenuePage'
 
-export const serverUrl = "http://localhost:8000"
+export const serverUrl = "https://playhub-backend-0s69.onrender.com"
 
 const ProtectedRoute = ({ userData, children }) => {
   if (!userData) {

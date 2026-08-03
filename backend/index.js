@@ -6,6 +6,9 @@ import cors from 'cors'
 import authRouter from './route/authRoute.js'
 import userRouter from './route/userRoute.js'
 import contentRouter from './route/contentRoute.js'
+import dns from "node:dns"
+
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 dotenv.config()
 const port = process.env.PORT || 5000

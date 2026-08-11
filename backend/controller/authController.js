@@ -7,10 +7,10 @@ import sendMail from "../config/sendMail.js"
 
 const tokenCookieOptions = {
     httpOnly: true,
-    secure: false,
+    secure: true,
     sameSite: "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-}
+};
 export const signUp = async (req,res) => {
     try {
         const { username, email, password} = req.body

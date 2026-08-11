@@ -63,16 +63,23 @@ const WatchVideoPage = () => {
   );
 
 
-  useEffect(() => {
-    if (!videoId || !allVideoData) return;
+    useEffect(() => {
+    const fetchVideoDetails = async () => {
+      if (!videoId) return;
+      try {
+        setLoading(true);
+        const res = await axios.get(`${serverUrl}/api/content/fetch-video/${videoId}`, { withCredentials: true });
+        setVideo(res.data);
+        setChannel(res.data.channel || []);
+        setComments(res.data.comments || []);
+      } catch (err) {
+        console.error("Error fetching video details:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // Redux me se current video nikal lo
-    const currentVideo = allVideoData.find((v) => v._id === videoId);
-    if (currentVideo) {
-      setVideo(currentVideo);
-      setChannel(currentVideo.channel || [])
-      setComments(currentVideo.comments || []);
-    }
+    fetchVideoDetails();
 
     // ✅ view count update karo
     axios.put(`${serverUrl}/api/content/video/${videoId}/add-view`, {}, { withCredentials: true })
@@ -81,7 +88,7 @@ const WatchVideoPage = () => {
       })
       .catch(err => console.error(err));
 
-  }, [videoId, allVideoData]);
+  }, [videoId]);
 
 
   // Video Controls

@@ -1,6 +1,7 @@
 import Channel from "../model/channelModel.js";
 import uploadOnCloudinary from "../config/cloudinary.js";
 import Short from "../model/shortModel.js";
+import cacheService from "../services/cacheService.js";
 
 
 
@@ -31,6 +32,8 @@ export const createShort = async (req, res) => {
       $push: { shorts: newShort._id },
     });
 
+    await cacheService.del("shorts:all");
+
     res.status(201).json({
       message: "Short created successfully",
       short: newShort,
@@ -44,14 +47,24 @@ export const createShort = async (req, res) => {
 
 export const getAllShorts = async (req, res) => {
   try {
-    const shorts = await Short.find()
-      .populate("channel comments.author comments.replies.author") // optional: populate channel info
-      .sort({ createdAt: -1 }); // newest first
+    const cacheKey = "shorts:all";
+
+    const shorts = await cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const result = await Short.find()
+          .populate("channel comments.author comments.replies.author")
+          .sort({ createdAt: -1 });
+
+        return result;
+      },
+      120
+    );
 
     res.status(200).json(shorts);
   } catch (error) {
     console.error("Error fetching shorts:", error);
-res.status(500).json({message : "Failed to fetch short"});
+    res.status(500).json({ message: "Failed to fetch short" });
   }
 };
 
@@ -104,6 +117,8 @@ export const updateShort = async (req, res) => {
 
     await short.save();
 
+    await cacheService.del("shorts:all");
+
     return res.status(200).json({
       message: "Short updated successfully",
       short,
@@ -132,6 +147,8 @@ export const deleteShort = async (req, res) => {
     });
 
     await Short.findByIdAndDelete(shortId);
+
+    await cacheService.del("shorts:all");
 
     return res.status(200).json({
       message: "Short deleted successfully",
@@ -169,10 +186,11 @@ export const toggleLikeShort = async (req, res) => {
     }
 
     await short.save();
-     await short.populate("comments.author", "username photoUrl");
-    await short.populate("channel")
-     await short.populate("comments.replies.author", "username photoUrl");
-   return res.status(200).json(short);
+    await cacheService.del("shorts:all");
+    await short.populate("comments.author", "username photoUrl");
+    await short.populate("channel");
+    await short.populate("comments.replies.author", "username photoUrl");
+    return res.status(200).json(short);
   } catch (error) {
   return  res.status(500).json({ message: "Error toggling like", error: error.message });
   }
@@ -193,10 +211,11 @@ export const toggleDislikeShort = async (req, res) => {
       short.dislikes.push(userId);
       short.likes.pull(userId);
     }
- await short.populate("comments.author", "username photoUrl");
-    await short.populate("channel")
-     await short.populate("comments.replies.author", "username photoUrl");
     await short.save();
+    await cacheService.del("shorts:all");
+    await short.populate("comments.author", "username photoUrl");
+    await short.populate("channel");
+    await short.populate("comments.replies.author", "username photoUrl");
     return res.status(200).json(short);
   } catch (error) {
     return res.status(500).json({ message: "Error toggling dislike", error: error.message });
@@ -218,9 +237,10 @@ export const addCommentforShort = async (req, res) => {
     // comment TOP pe add karo
     short.comments.unshift({ author: userId, message });
     await short.save();
- await short.populate("comments.author", "username photoUrl");
-    await short.populate("channel")
-     await short.populate("comments.replies.author", "username photoUrl");
+    await cacheService.del("shorts:all");
+    await short.populate("comments.author", "username photoUrl");
+    await short.populate("channel");
+    await short.populate("comments.replies.author", "username photoUrl");
 
     return res.status(201).json(short);
   } catch (error) {
@@ -246,9 +266,10 @@ export const addReplyforShort = async (req, res) => {
     // reply TOP pe add karo
     comment.replies.unshift({ author: userId, message });
     await short.save();
-      await short.populate("comments.author", "username photoUrl");
-    await short.populate("channel")
-     await short.populate("comments.replies.author", "username photoUrl");
+    await cacheService.del("shorts:all");
+    await short.populate("comments.author", "username photoUrl");
+    await short.populate("channel");
+    await short.populate("comments.replies.author", "username photoUrl");
 
     return res.status(201).json(short);
   } catch (error) {
@@ -271,6 +292,8 @@ export const addViewforShort = async (req, res) => {
     );
 
     if (!short) return res.status(404).json({ message: "Video not found" });
+
+    await cacheService.del("shorts:all");
 
       await short.populate("comments.author", "username photoUrl");
     await short.populate("channel")
@@ -296,12 +319,13 @@ export const toggleSaveShort = async (req, res) => {
     } else {
       short.saveBy.push(userId);
     }
-    await short.populate("comments.author", "username photoUrl");
-    await short.populate("channel")
-     await short.populate("comments.replies.author", "username photoUrl");
-
     await short.save();
-   return res.status(200).json(short);
+    await cacheService.del("shorts:all");
+    await short.populate("comments.author", "username photoUrl");
+    await short.populate("channel");
+    await short.populate("comments.replies.author", "username photoUrl");
+
+    return res.status(200).json(short);
   } catch (error) {
    return res.status(500).json({ message: "Error toggling save", error: error.message });
   }

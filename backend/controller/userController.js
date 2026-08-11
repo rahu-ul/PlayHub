@@ -2,6 +2,8 @@ import uploadOnCloudinary from "../config/cloudinary.js"
 import Channel from "../model/channelModel.js"
 import Short from "../model/shortModel.js"
 
+import cacheService from "../services/cacheService.js"
+
 import User from "../model/userModel.js"
 import Video from "../model/videoModel.js"
 
@@ -354,6 +356,8 @@ export const addToHistory = async (req, res) => {
       }
     });
 
+    await cacheService.del(`history:${userId}`);
+
     res.status(200).json({ message: "Added to history" });
   } catch (err) {
     console.error("❌ addToHistory error:", err);
@@ -368,23 +372,36 @@ export const addToHistory = async (req, res) => {
 export const getHistory = async (req, res) => {
   try {
     const userId = req.userId;
+    const cacheKey = `history:${userId}`;
 
-    const user = await User.findById(userId)
-      .populate({
-        path: "history.contentId", // refPath ke basis pe Video ya Short populate hoga
-        populate: {
-          path: "channel", // ✅ contentId ke andar ka channel populate karega
-          select: "name avatar", // sirf avatar aur name bhejega
-        },
-      })
-      .select("history");
+    const sortedHistory = await cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const dbStart = performance.now();
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+        const user = await User.findById(userId)
+          .populate({
+            path: "history.contentId", // refPath ke basis pe Video ya Short populate hoga
+            populate: {
+              path: "channel", // ✅ contentId ke andar ka channel populate karega
+              select: "name avatar", // sirf avatar aur name bhejega
+            },
+          })
+          .select("history");
 
-    // ✅ Latest history upar
-    const sortedHistory = [...user.history].sort(
-      (a, b) => new Date(b.watchedAt) - new Date(a.watchedAt)
+        const dbEnd = performance.now();
+        console.log(`⏱️ MongoDB /gethistory query time: ${(dbEnd - dbStart).toFixed(2)} ms`);
+
+        if (!user) return null;
+
+        return [...user.history].sort(
+          (a, b) => new Date(b.watchedAt) - new Date(a.watchedAt)
+        );
+      },
+      120
     );
+
+    if (!sortedHistory) return res.status(404).json({ message: "User not found" });
 
     res.status(200).json(sortedHistory);
   } catch (err) {

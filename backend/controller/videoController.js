@@ -3,6 +3,7 @@ import Video from "../model/videoModel.js";
 import Channel from "../model/channelModel.js";
 import uploadOnCloudinary from "../config/cloudinary.js";
 import User from "../model/userModel.js";
+import cacheService from "../services/cacheService.js";
 
 
 export const createVideo = async (req, res) => {
@@ -49,14 +50,16 @@ export const createVideo = async (req, res) => {
     });
 
     // ✅ Add video to channel's videos array
-   await Channel.findByIdAndUpdate(
-  channelData._id,
-  { $push: { videos: newVideo._id } },
-  { new: true } // returns updated doc
-);
+    await Channel.findByIdAndUpdate(
+      channelData._id,
+      { $push: { videos: newVideo._id } },
+      { new: true } // returns updated doc
+    );
 
-    // Return updated channel along with new video
-   return res.status(201).json({
+    // ✅ Invalidate all-videos cache so feed includes the new video
+    await cacheService.del("videos:all");
+
+    return res.status(201).json({
       message: "Video uploaded successfully",
       video: newVideo
     });
@@ -103,41 +106,105 @@ export const getChannelVideos = async (req, res) => {
 
 export const getAllVideos = async (req, res) => {
   try {
-    const videos = await Video.find()
-      .populate("channel comments.author comments.replies.author") // optional: populate channel info
-      .sort({ createdAt: -1 }); // newest first
+    const cacheKey = "videos:all";
 
-   return res.status(200).json(videos);
+    const startTime = performance.now();
+
+    const videos = await cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        console.log("🗄️ MongoDB FALLBACK for all videos");
+        const dbStart = performance.now();
+
+        const result = await Video.find()
+          .populate("channel comments.author comments.replies.author")
+          .sort({ createdAt: -1 });
+
+        const dbEnd = performance.now();
+        console.log(
+          `⏱️ MongoDB /allvideos query time: ${(dbEnd - dbStart).toFixed(2)} ms`
+        );
+
+        return result;
+      },
+      120
+    );
+
+    const endTime = performance.now();
+    console.log(`⏱️ Total getAllVideos time: ${(endTime - startTime).toFixed(2)} ms`);
+
+    return res.status(200).json(videos);
   } catch (error) {
     console.error("Error fetching videos:", error);
-return res.status(500).json({message : "Failed to fetch videos"});
+    return res.status(500).json({ message: "Failed to fetch videos" });
   }
 };
 
 
 // ---------------- FETCH SINGLE VIDEO ----------------
 export const fetchVideo = async (req, res) => {
-  try {
-    const { videoId } = req.params;
+    try {
 
-    const video = await Video.findById(videoId)
-      .populate("channel", "name avatar") // ✅ show channel info
-      .populate("likes", "username photoUrl"); // optional: who liked it
+        console.log("🔥 fetchVideo CALLED");
 
-    if (!video) {
-      return res.status(404).json({ message: "Video not found" });
+        const { videoId } = req.params;
+
+        const cacheKey = `video:${videoId}`;
+
+        console.log("🎥 videoId:", videoId);
+        console.log("🔑 cacheKey:", cacheKey);
+
+        const startTime = performance.now();
+
+        const video = await cacheService.getOrSet(
+            cacheKey,
+            async () => {
+
+                console.log("🗄️ MongoDB FALLBACK");
+
+                const dbStart = performance.now();
+
+                const result = await Video.findById(videoId)
+                    .populate("channel", "name avatar")
+                    .populate("likes", "username photoUrl");
+
+                const dbEnd = performance.now();
+
+                console.log(
+                    `⏱️ MongoDB query time: ${(dbEnd - dbStart).toFixed(2)} ms`
+                );
+
+                return result;
+            },
+            3600
+        );
+
+        const endTime = performance.now();
+
+        console.log(
+            `⏱️ Total fetchVideo time: ${(endTime - startTime).toFixed(2)} ms`
+        );
+
+        console.log("📦 Video returned");
+
+        if (!video) {
+            return res.status(404).json({
+                message: "Video not found",
+            });
+        }
+
+        return res.status(200).json(video);
+
+    } catch (error) {
+
+        console.error("❌ fetchVideo ERROR:", error);
+
+        return res.status(500).json({
+            message: "Error fetching video",
+            error: error.message,
+        });
     }
-
-    return res.status(200).json(video);
-  } catch (error) {
-    console.error("Error fetching video:", error);
-    return res.status(500).json({
-      message: "Error fetching video",
-      error: error.message,
-    });
-  }
 };
-
 
 
 // ---------------- UPDATE VIDEO ----------------
@@ -172,7 +239,11 @@ export const updateVideo = async (req, res) => {
       video.thumbnail = uploadedThumbnail;
     }
 
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
 
     return res.status(200).json({
       message: "Video updated successfully",
@@ -202,8 +273,12 @@ export const deleteVideo = async (req, res) => {
       $pull: { videos: video._id },
     });
 
-    // delete video document
+        // delete video document
     await Video.findByIdAndDelete(videoId);
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
 
     return res.status(200).json({
       message: "Video deleted successfully",
@@ -236,7 +311,12 @@ export const toggleLikeVideo = async (req, res) => {
       video.dislikes.pull(userId);
     }
 
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
+
    return res.status(200).json(video);
   } catch (error) {
   return  res.status(500).json({ message: "Error toggling like", error: error.message });
@@ -259,7 +339,12 @@ export const toggleDislikeVideo = async (req, res) => {
       video.likes.pull(userId);
     }
 
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
+
     return res.status(200).json(video);
   } catch (error) {
     return res.status(500).json({ message: "Error toggling dislike", error: error.message });
@@ -279,7 +364,11 @@ export const addComment = async (req, res) => {
 
     // comment push karo
     video.comments.push({ author: userId, message });
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
 
     // ✅ ab dobara fetch karo with nested populate
     const populatedVideo = await Video.findById(videoId)
@@ -313,7 +402,11 @@ export const addReply = async (req, res) => {
     if (!comment) return res.status(404).json({ message: "Comment not found" });
 
     comment.replies.push({ author: userId, message });
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
 
     // ✅ again fetch with populate
     const populatedVideo = await Video.findById(videoId)
@@ -343,7 +436,11 @@ export const addView = async (req, res) => {
       { new: true }
     );
 
-    if (!video) return res.status(404).json({ message: "Video not found" });
+        if (!video) return res.status(404).json({ message: "Video not found" });
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
 
    return res.status(200).json(video);
   } catch (error) {
@@ -366,7 +463,12 @@ export const toggleSaveVideo = async (req, res) => {
       video.saveBy.push(userId);
     }
 
-    await video.save();
+        await video.save();
+
+    // ✅ Invalidate cache
+    await cacheService.del(`video:${videoId}`);
+    await cacheService.del("videos:all");
+
    return res.status(200).json(video);
   } catch (error) {
    return res.status(500).json({ message: "Error toggling save", error: error.message });
